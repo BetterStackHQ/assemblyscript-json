@@ -311,7 +311,7 @@ export class Null extends Value {
     return "null";
   }
 
-  valueOf(): null {
+  valueOf(): Null | null {
     return null;
   }
 }
