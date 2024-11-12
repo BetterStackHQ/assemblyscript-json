@@ -94,6 +94,8 @@ namespace _JSON {
 
   /** Parses a string or Uint8Array and returns a Json Value. */
   export function parse<T = Uint8Array>(str: T): Value {
+    _JSON.decoder.handler.reset();
+
     var arr: Uint8Array;
     if (isString<T>(str)) {
       arr = Buffer.fromString(<string>str);
@@ -174,25 +176,60 @@ export abstract class Value {
   abstract stringify(): string;
 
   /**
-   * 
-   * @returns A AS string corresponding to the value. 
+   *
+   * @returns A AS string corresponding to the value.
    */
   toString(): string {
     return this.stringify();
   }
 }
+function isHexDigit(char: string): bool {
+  return ('0123456789abcdefABCDEF'.indexOf(char) >= 0);
+}
 
-function escapeChar(char: string): string {
+function isEscapeSequence(str: string, index: i32): bool {
+  if (str.charAt(index) !== '\\') return false;
+  if (index + 1 >= str.length) return false;
+
+  const next = str.charAt(index + 1);
+  // Check for standard escapes
+  if ('"\\/bfnrt'.includes(next)) return true;
+
+  // Check for unicode escape
+  if (next === 'u' && index + 5 < str.length) {
+    // Verify next 4 chars are valid hex digits
+    for (let i = 0; i < 4; i++) {
+      if (!isHexDigit(str.charAt(index + 2 + i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function escapeChar(char: string, index: i32, str: string): string {
+  // If this character is part of an existing escape sequence, return it as-is
+  if (isEscapeSequence(str, index)) {
+    return char;
+  }
+
   const charCode = char.charCodeAt(0);
+  if (charCode < 32 || charCode === 0x7F) { // Include DEL character (0x7F)
+    // Handle all control characters with unicode escapes
+    switch (charCode) {
+      case 0x08: return "\\b";  // Backspace
+      case 0x09: return "\\t";  // Tab
+      case 0x0A: return "\\n";  // Line feed
+      case 0x0C: return "\\f";  // Form feed
+      case 0x0D: return "\\r";  // Carriage return
+      default: return "\\u" + charCode.toString(16).padStart(4, "0");
+    }
+  }
   switch (charCode) {
-    case 0x22: return '\\"';
-    case 0x5C: return "\\\\";
-    case 0x08: return "\\b";
-    case 0x0A: return "\\n";
-    case 0x0D: return "\\r";
-    case 0x09: return "\\t";
-    case 0x0C: return "\\f";
-    case 0x0B: return "\\u000b";
+    case 0x22: return '\\"';  // Quote
+    case 0x5C: return "\\\\"; // Backslash
     default: return char;
   }
 }
@@ -204,10 +241,23 @@ export class Str extends Value {
   }
 
   stringify(): string {
-    let escaped: string[] = new Array(this._str.length);
-    for (let i = 0; i < this._str.length; i++) {
-      const char = this._str.at(i);
-      escaped[i] = escapeChar(char);
+    let escaped: string[] = [];
+    let i = 0;
+    while (i < this._str.length) {
+      if (isEscapeSequence(this._str, i)) {
+        // Keep existing escape sequence
+        if (this._str.charAt(i + 1) === 'u') {
+          // Single unicode escape
+          escaped.push(this._str.substr(i, 6));
+          i += 6;
+        } else {
+          escaped.push(this._str.substr(i, 2));
+          i += 2;
+        }
+      } else {
+        escaped.push(escapeChar(this._str.charAt(i), i, this._str));
+        i++;
+      }
     }
     return `"${escaped.join('')}"`;
   }
@@ -326,7 +376,7 @@ export class Obj extends Value {
       for (let i: i32 = 0; i < keys.length; i++) {
         const key = keys[i];
         const value = this._obj.get(key);
-        // Currently must get the string value before interpolation 
+        // Currently must get the string value before interpolation
         // see: https://github.com/AssemblyScript/assemblyscript/issues/1944
         const valStr = value.stringify();
         objs[i] = `"${key}":${valStr}`;

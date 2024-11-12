@@ -24,7 +24,7 @@ describe('Escaped characters', () => {
     const strings = ['"', '\\', '"\\"', '\\"\\"'];
     // Computed using javascript's JSON as implemented in mozilla firefox 90.0 (64-bit)
     const expected = ["\"\\\"\"", "\"\\\\\"", "\"\\\"\\\\\\\"\"", "\"\\\\\\\"\\\\\\\"\""];
-    
+
     for(let i=0; i<strings.length; i++){
       const jsonStr = new JSON.Str(strings[i]);
       expect(jsonStr.stringify()).toBe(expected[i]);
@@ -39,6 +39,45 @@ describe('Escaped characters', () => {
     for(let i=0; i<strings.length; i++){
       const jsonStr = new JSON.Str(strings[i]);
       expect(jsonStr.stringify()).toBe(expected[i]);
+    }
+  });
+
+  it('Does not escape ANSI escape sequences', () => {
+    const input = '{"message":"test message with \\u001b[31m color coding"}';
+    const parsed = JSON.parse(input);
+    expect(parsed.stringify()).toBe(input);
+  });
+
+  it('Maintains characters above 0xFFFF', () => {
+    const input = '{"emoji":"😀"}';
+    const parsed = JSON.parse(input);
+    expect(parsed.stringify()).toBe(input);
+  });
+
+  it('Does not crash when surrogate pair escape sequences', () => {
+    const input = '{"emoji":"\ud83d\ude00"}'; // Escaped grinning face emoji
+    const parsed = JSON.parse(input);
+    expect(parsed.stringify()).toBe(input);
+  });
+
+  it('Escapes control characters with unicode escape sequences', () => {
+    // Test some control characters that aren't special cases
+    const inputs = [
+      '{"control":"\\u0001"}',
+      '{"control":"\\u0002"}',
+      '{"control":"\\u0003"}',
+      '{"control":"\\u001f"}'
+    ];
+    const expected = [
+      '{"control":"\\u0001"}',
+      '{"control":"\\u0002"}',
+      '{"control":"\\u0003"}',
+      '{"control":"\\u001f"}'
+    ];
+
+    for(let i=0; i<inputs.length; i++) {
+      const parsed = JSON.parse(inputs[i]);
+      expect(parsed.stringify()).toBe(expected[i]);
     }
   });
 });
